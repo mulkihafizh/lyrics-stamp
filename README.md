@@ -9,7 +9,7 @@
 
 Whenever I buy music on Bandcamp or rip CDs to FLAC, I almost always hit the same wall: the lyrics are either completely missing, or they're just dumped in as raw, static blocks of text.
 
-I love watching lyrics scroll in sync while listening on foobar2000, but trying to time `.lrc` files by hand—or wrestling with clunky abandonware from fifteen years ago—takes all the fun out of it.
+I love watching lyrics scroll in sync while listening on foobar2000, but trying to time `.lrc` files by hand or wrestling with clunky abandonware from fifteen years ago takes all the fun out of it.
 
 I wanted something tactile, responsive, and satisfying: drop in a track, press play, and tap along to the music.
 
@@ -20,7 +20,7 @@ So I put **LYRICS-STAMP** together. It’s a clean, local-first audio atelier ma
 ## ✨ Features
 
 - 📁 **Universal Local Library & Native Folder Picker**:
-  - **Native Browser Folder Picker**: Click **"Open Folder"** to choose any music directory directly from your device via the Web File System Access API. Runs 100% client-side with zero cloud uploads—works seamlessly on local dev and static hosting platforms like **Vercel** with direct local disk reading and 1-click `.lrc` saving!
+  - **Native Browser Folder Picker**: Click **"Open Folder"** to choose any music directory directly from your device via the Web File System Access API. Runs 100% client-side with zero cloud uploads works seamlessly on local dev and static hosting platforms like **Vercel** with direct local disk reading and 1-click `.lrc` saving!
   - **Server-Side Scanning (Node Dev Mode)**: Automatically scans local collections recursively for `.flac`, `.mp3`, `.ogg`, and `.wav` files via `.env.local` (`MUSIC_DIR`) or the in-app modal.
   - **Client-Side FLAC & Vorbis Parser**: Decodes STREAMINFO audio durations and Vorbis tags (`TITLE`, `ARTIST`, `ALBUM`, `LYRICS`, `UNSYNCEDLYRICS`) directly in browser memory without external binaries.
   - **Companion `.lrc` Detection**: Detects companion `.lrc` files next to audio files and updates census status (`SYNC`, `STAMP`, `EMPTY`).
@@ -114,7 +114,7 @@ To create Apple Music / ESLyric style karaoke lyrics:
 1. Toggle the stamping mode button to **`⊞ WORD`** in the playback bar.
 2. Hit <kbd>Space</kbd> when the singer starts pronouncing a word. The word glows green (`ACTIVE`).
 3. When the singer stops holding the word, press **<kbd>Ctrl+Space</kbd>** (or **<kbd>Alt+Space</kbd>**) to record the word's end timestamp.
-4. If words flow continuously with no pause, simply press <kbd>Space</kbd> again — it will automatically close the previous word and start the next.
+4. If words flow continuously with no pause, simply press <kbd>Space</kbd> again   it will automatically close the previous word and start the next.
 5. Export with **`.ELRC`** or **`.LRC ENHANCED`** for foobar2000 (with ESLyric component) or AIMP.
 
 ---

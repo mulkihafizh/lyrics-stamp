@@ -50,6 +50,7 @@ export interface AudioTrack {
   hasEmbeddedLyrics: boolean;
   hasCompanionLrc?: boolean;
   companionLrcPath?: string | null;
+  lyricsSource?: 'companion_lrc' | 'embedded' | 'both' | 'foobar_cache' | 'none';
   fileHandle?: any;           // FileSystemFileHandle when opened via File System Access API
   dirHandle?: any;            // FileSystemDirectoryHandle of the parent folder
 }

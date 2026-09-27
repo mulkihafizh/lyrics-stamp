@@ -283,6 +283,13 @@ function getFormatTag(track: { fileType: string; fileName: string }): string {
             >
               TAG
             </span>
+            <span
+              v-else-if="track.lyricsSource === 'foobar_cache' || (track as any).source === 'foobar_cache'"
+              class="font-mono text-[8px] text-sky-400 border border-sky-500/40 px-1 py-0.2 bg-sky-500/10"
+              title="Loaded from foobar2000 lyrics cache"
+            >
+              FOOBAR
+            </span>
           </div>
         </div>
 

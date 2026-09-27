@@ -17,7 +17,7 @@ interface ScannedTrack {
     offsetMs: number;
   };
   status: 'synced' | 'unsynced' | 'missing';
-  source: 'companion_lrc' | 'embedded' | 'both' | 'none';
+  source: 'companion_lrc' | 'embedded' | 'both' | 'foobar_cache' | 'none';
   rawLyrics: string;
   hasCompanionLrc: boolean;
   companionLrcPath: string | null;
@@ -182,11 +182,109 @@ function hasSyncTimestamps(text: string): boolean {
 }
 
 /**
+ * Resolve foobar2000 lyrics cache directory
+ */
+export function getFoobarLyricsDirectory(): string | null {
+  if (process.env.FOOBAR_LYRICS_DIR && fs.existsSync(process.env.FOOBAR_LYRICS_DIR)) {
+    return path.resolve(process.env.FOOBAR_LYRICS_DIR);
+  }
+  const appData = process.env.APPDATA;
+  if (!appData) return null;
+  const v2 = path.join(appData, 'foobar2000-v2', 'lyrics');
+  if (fs.existsSync(v2)) return v2;
+  const v1 = path.join(appData, 'foobar2000', 'lyrics');
+  if (fs.existsSync(v1)) return v1;
+  return null;
+}
+
+interface FoobarCacheEntry {
+  fileName: string;
+  fullPath: string;
+  norm: string;
+  ext: string;
+}
+
+function normalizeForMatching(str: string): string {
+  return (str || '')
+    .toLowerCase()
+    .replace(/[()[\]{}'",_\-.~!@#$%^&*+=<>?/\\|:;]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function loadFoobarLyricsCache(cacheDir: string | null): FoobarCacheEntry[] {
+  if (!cacheDir || !fs.existsSync(cacheDir)) return [];
+  try {
+    const files = fs.readdirSync(cacheDir);
+    const entries: FoobarCacheEntry[] = [];
+    for (const file of files) {
+      if (file.endsWith('.lrc') || file.endsWith('.txt')) {
+        const ext = path.extname(file);
+        const base = file.slice(0, -ext.length);
+        entries.push({
+          fileName: file,
+          fullPath: path.join(cacheDir, file),
+          norm: normalizeForMatching(base),
+          ext,
+        });
+      }
+    }
+    return entries;
+  } catch {
+    return [];
+  }
+}
+
+function matchFoobarLyrics(
+  cacheEntries: FoobarCacheEntry[],
+  artist: string,
+  title: string,
+  albumArtist?: string
+): string | null {
+  if (cacheEntries.length === 0) return null;
+  const normTitle = normalizeForMatching(title);
+  if (!normTitle) return null;
+
+  const normArtist = normalizeForMatching(artist);
+  const normAlbumArtist = albumArtist ? normalizeForMatching(albumArtist) : '';
+
+  // 1. Direct combinations: "Artist - Title", "Title - Artist", "AlbumArtist - Title"
+  const combo1 = normalizeForMatching(`${artist} - ${title}`);
+  const combo2 = normalizeForMatching(`${title} - ${artist}`);
+  const combo3 = normAlbumArtist ? normalizeForMatching(`${albumArtist} - ${title}`) : '';
+
+  for (const entry of cacheEntries) {
+    if (entry.norm === combo1 || entry.norm === combo2 || (combo3 && entry.norm === combo3)) {
+      try {
+        return fs.readFileSync(entry.fullPath, 'utf-8');
+      } catch {}
+    }
+  }
+
+  // 2. Contains normalized title and contains artist word (or artist contains entry)
+  for (const entry of cacheEntries) {
+    if (entry.norm.includes(normTitle)) {
+      const artistWords = (normArtist || normAlbumArtist).split(' ').filter(w => w.length > 2);
+      if (artistWords.length === 0 || artistWords.some(w => entry.norm.includes(w))) {
+        try {
+          return fs.readFileSync(entry.fullPath, 'utf-8');
+        } catch {}
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
  * Scan configured music directory recursively
  */
 export function scanMusicFolder(baseDir = activeMusicDirectory): ScannedTrack[] {
   const tracks: ScannedTrack[] = [];
   if (!fs.existsSync(baseDir)) return tracks;
+
+  const foobarDir = getFoobarLyricsDirectory();
+  const foobarEntries = loadFoobarLyricsCache(foobarDir);
 
   let counter = 0;
 
@@ -236,6 +334,24 @@ export function scanMusicFolder(baseDir = activeMusicDirectory): ScannedTrack[] 
             duration = getFlacDuration(fullPath);
           }
 
+          // Clean title & artist
+          let title = tags['TITLE'] || baseName;
+          // Strip prefix track number like "1-aespa-Drama-52IXO0" if title is fallback
+          if (!tags['TITLE']) {
+            title = baseName.replace(/^\d+[-_]/, '').replace(/[-_][A-Z0-9]{6}$/, '').replace(/-/g, ' ');
+          }
+          const rawArtist = tags['ARTIST'] || path.basename(path.dirname(fullPath));
+          const artist = rawArtist.replace(/\r?\n/g, ', ');
+          const rawAlbum = tags['ALBUM'] || path.basename(currentDir);
+          const album = rawAlbum.replace(/\r?\n/g, ', ');
+          const albumArtist = (tags['ALBUMARTIST'] || tags['ALBUM ARTIST'] || '').replace(/\r?\n/g, ', ');
+
+          // 3. foobar2000 lyrics cache (Tier 3 fallback)
+          let cachedLyrics: string | null = null;
+          if (!companionLrc && !embeddedLyrics && foobarEntries.length > 0) {
+            cachedLyrics = matchFoobarLyrics(foobarEntries, rawArtist, title, albumArtist);
+          }
+
           // Extract clean lyric lines ignoring metadata tags
           const extractLyricLines = (text: string | null): string[] => {
             if (!text) return [];
@@ -251,6 +367,7 @@ export function scanMusicFolder(baseDir = activeMusicDirectory): ScannedTrack[] 
 
           const companionLines = extractLyricLines(companionLrc);
           const embeddedLines = extractLyricLines(embeddedLyrics);
+          const cachedLines = extractLyricLines(cachedLyrics);
 
           let rawLyrics = '';
           let source: ScannedTrack['source'] = 'none';
@@ -264,9 +381,17 @@ export function scanMusicFolder(baseDir = activeMusicDirectory): ScannedTrack[] 
           } else if (embeddedLines.length > 0) {
             source = 'embedded';
             rawLyrics = embeddedLyrics || '';
+          } else if (cachedLines.length > 0) {
+            source = 'foobar_cache';
+            rawLyrics = cachedLyrics || '';
           }
 
-          const activeLines = companionLines.length > 0 ? companionLines : embeddedLines;
+          const activeLines =
+            companionLines.length > 0
+              ? companionLines
+              : embeddedLines.length > 0
+                ? embeddedLines
+                : cachedLines;
 
           let status: ScannedTrack['status'] = 'missing';
           if (activeLines.length > 0) {
@@ -277,15 +402,6 @@ export function scanMusicFolder(baseDir = activeMusicDirectory): ScannedTrack[] 
               status = 'unsynced';
             }
           }
-
-          // Clean title & artist
-          let title = tags['TITLE'] || baseName;
-          // Strip prefix track number like "1-aespa-Drama-52IXO0" if title is fallback
-          if (!tags['TITLE']) {
-            title = baseName.replace(/^\d+[-_]/, '').replace(/[-_][A-Z0-9]{6}$/, '').replace(/-/g, ' ');
-          }
-          const artist = tags['ARTIST'] || path.basename(path.dirname(fullPath));
-          const album = tags['ALBUM'] || path.basename(currentDir);
 
           counter++;
           tracks.push({

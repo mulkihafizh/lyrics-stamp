@@ -520,6 +520,7 @@ export const useLyricsStudioStore = defineStore('lyricsStudio', {
             hasEmbeddedLyrics: t.source === 'embedded' || t.source === 'both',
             hasCompanionLrc: t.hasCompanionLrc,
             companionLrcPath: t.companionLrcPath,
+            lyricsSource: t.source,
           };
           this._updateTrackSyncStatus(track);
           return track;
@@ -592,6 +593,7 @@ export const useLyricsStudioStore = defineStore('lyricsStudio', {
             hasEmbeddedLyrics: t.source === 'embedded' || t.source === 'both',
             hasCompanionLrc: t.hasCompanionLrc,
             companionLrcPath: t.companionLrcPath,
+            lyricsSource: t.source,
           };
           this._updateTrackSyncStatus(track);
           return track;
@@ -642,6 +644,7 @@ export const useLyricsStudioStore = defineStore('lyricsStudio', {
           this._updateTrackSyncStatus(track);
           track.hasCompanionLrc = true;
           track.companionLrcPath = `${track.dirHandle.name}/${lrcName}`;
+          track.lyricsSource = 'companion_lrc';
 
           if (notify) {
             this.showToast(`Saved ${lrcName} directly to local disk`);
@@ -671,6 +674,7 @@ export const useLyricsStudioStore = defineStore('lyricsStudio', {
           this._updateTrackSyncStatus(track);
           track.hasCompanionLrc = true;
           track.companionLrcPath = data.targetPath;
+          track.lyricsSource = 'companion_lrc';
 
           if (notify) {
             this.showToast(`Saved .lrc next to ${lrcName}`);

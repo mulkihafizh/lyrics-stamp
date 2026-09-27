@@ -7,7 +7,13 @@
 [![TailwindCSS](https://img.shields.io/badge/TailwindCSS-v4-06b6d4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![foobar2000 Ready](https://img.shields.io/badge/foobar2000-Compliant%20LRC-orange)](https://www.foobar2000.org/)
 
-**LYRICS-STAMP** is a local-first, precision audio synchronization studio tailored for audiophiles, karaoke curators, and foobar2000 power users. It scans your local music library, extracts embedded Vorbis comments and companion `.lrc` files, and provides a real-time stamping atelier with sub-millisecond audio scrubbing, pitch-preserved playback speeds, latency compensation, and both **Line** and **Enhanced Word (eLRC)** stamping workflows.
+Whenever I buy music on Bandcamp or rip CDs to FLAC, I almost always hit the same wall: the lyrics are either completely missing, or they're just dumped in as raw, static blocks of text.
+
+I love watching lyrics scroll in sync while listening on foobar2000, but trying to time `.lrc` files by hand—or wrestling with clunky abandonware from fifteen years ago—takes all the fun out of it.
+
+I wanted something tactile, responsive, and satisfying: drop in a track, press play, and tap along to the music.
+
+So I put **LYRICS-STAMP** together. It’s a clean, local-first audio atelier made for digital crate-diggers, CD rippers, and anyone who still cares about curating a well-tagged, offline music library.
 
 ---
 

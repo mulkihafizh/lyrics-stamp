@@ -1,5 +1,5 @@
 # LYRICS-STAMP 🎵
-> **High-Precision Audio Lyrics Specification Studio & foobar2000 Atelier**
+> **Audio Lyrics Specification Studio & foobar2000 Atelier**
 
 [![Vue 3](https://img.shields.io/badge/Vue-3.5-4fc08d?logo=vue.js&logoColor=white)](https://vuejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)

@@ -50,6 +50,8 @@ export interface AudioTrack {
   hasEmbeddedLyrics: boolean;
   hasCompanionLrc?: boolean;
   companionLrcPath?: string | null;
+  fileHandle?: any;           // FileSystemFileHandle when opened via File System Access API
+  dirHandle?: any;            // FileSystemDirectoryHandle of the parent folder
 }
 
 // ── Studio Playback State ──

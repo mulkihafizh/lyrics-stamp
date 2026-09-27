@@ -21,6 +21,7 @@ import type {
 } from '@/types';
 import { parseRawLyricsToLines, serializeToFoobarLRC } from '@/utils/lrcEngine';
 import { formatSecondsToLRC, formatSecondsToWordTag } from '@/utils/timeFormat';
+import { parseFlacFileInBrowser } from '@/utils/browserFlacReader';
 
 let trackIdCounter = 0;
 function generateTrackId(): string {
@@ -604,36 +605,81 @@ export const useLyricsStudioStore = defineStore('lyricsStudio', {
 
     async saveLrcToDisk(notify = true): Promise<boolean> {
       const track = this.activeTrack;
-      if (!track || !track.filePath) {
-        if (notify) this.showToast('No active local track file path');
+      if (!track) {
+        if (notify) this.showToast('No active track');
         return false;
       }
 
-      try {
-        const lrcContent = serializeToFoobarLRC(track);
-        const res = await fetch('/api/save-lrc', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            filePath: track.filePath,
-            lrcContent,
-          }),
-        });
+      const lrcContent = serializeToFoobarLRC(track);
+      const lrcName = track.fileName.replace(/\.[^.]+$/, '.lrc');
 
-        if (!res.ok) throw new Error('Failed to save to disk');
-        const data = await res.json();
+      // 1. Direct browser File System Access API (Client-side disk write)
+      if (track.dirHandle) {
+        try {
+          const lrcFileHandle = await track.dirHandle.getFileHandle(lrcName, { create: true });
+          const writable = await lrcFileHandle.createWritable();
+          await writable.write(lrcContent);
+          await writable.close();
 
-        this._updateTrackSyncStatus(track);
-        track.hasCompanionLrc = true;
-        track.companionLrcPath = data.targetPath;
+          this._updateTrackSyncStatus(track);
+          track.hasCompanionLrc = true;
+          track.companionLrcPath = `${track.dirHandle.name}/${lrcName}`;
 
-        if (notify) {
-          const lrcName = track.fileName.replace(/\.[^.]+$/, '.lrc');
-          this.showToast(`Saved .lrc next to ${lrcName}`);
+          if (notify) {
+            this.showToast(`Saved ${lrcName} directly to local disk`);
+          }
+          return true;
+        } catch (err: any) {
+          if (notify) this.showToast(`Error saving to disk: ${err.message}`);
+          return false;
         }
+      }
+
+      // 2. Local Node dev server API
+      if (track.filePath) {
+        try {
+          const res = await fetch('/api/save-lrc', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              filePath: track.filePath,
+              lrcContent,
+            }),
+          });
+
+          if (!res.ok) throw new Error('Failed to save to disk');
+          const data = await res.json();
+
+          this._updateTrackSyncStatus(track);
+          track.hasCompanionLrc = true;
+          track.companionLrcPath = data.targetPath;
+
+          if (notify) {
+            this.showToast(`Saved .lrc next to ${lrcName}`);
+          }
+          return true;
+        } catch (err: any) {
+          if (notify) this.showToast(`Error saving .lrc: ${err.message}`);
+          return false;
+        }
+      }
+
+      // 3. Fallback: Browser file download
+      try {
+        const blob = new Blob([lrcContent], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = lrcName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        this._updateTrackSyncStatus(track);
+        if (notify) this.showToast(`Downloaded ${lrcName}`);
         return true;
       } catch (err: any) {
-        if (notify) this.showToast(`Error saving .lrc: ${err.message}`);
+        if (notify) this.showToast(`Failed to export .lrc: ${err.message}`);
         return false;
       }
     },
@@ -642,38 +688,385 @@ export const useLyricsStudioStore = defineStore('lyricsStudio', {
       this.fetchLocalLibrary();
     },
 
-    // ── 9. File Import ──
+    // ── 9. Native Browser Folder Picker (File System Access API) ──
+    async openNativeFolderPicker(): Promise<boolean> {
+      if (typeof window === 'undefined' || !('showDirectoryPicker' in window)) {
+        return false;
+      }
+
+      this.isScanning = true;
+      try {
+        const rootDirHandle = await (window as any).showDirectoryPicker({
+          id: 'lyrics-stamp-music-dir',
+          mode: 'readwrite',
+        });
+
+        const scannedAudio: Array<{
+          file: File;
+          fileHandle: any;
+          dirHandle: any;
+          subDir: string;
+        }> = [];
+
+        const lrcMap = new Map<string, string>();
+
+        // Recursive crawler (max depth 4)
+        async function crawlFolder(folderHandle: any, currentPath = '', depth = 0) {
+          if (depth > 4) return;
+
+          const currentFiles: Array<{ name: string; handle: any }> = [];
+          const subFolders: any[] = [];
+
+          for await (const [name, handle] of (folderHandle as any).entries()) {
+            if (handle.kind === 'file') {
+              currentFiles.push({ name, handle });
+            } else if (handle.kind === 'directory') {
+              if (!name.startsWith('.') && name !== 'node_modules' && name !== '$RECYCLE.BIN') {
+                subFolders.push({ name, handle });
+              }
+            }
+          }
+
+          // Pass 1: Collect .lrc text files
+          for (const item of currentFiles) {
+            if (item.name.toLowerCase().endsWith('.lrc')) {
+              try {
+                const f = await item.handle.getFile();
+                const text = await f.text();
+                const baseName = item.name.replace(/\.[^.]+$/, '').toLowerCase();
+                const keyWithPath = currentPath ? `${currentPath}/${baseName}` : baseName;
+                lrcMap.set(keyWithPath, text);
+                lrcMap.set(baseName, text);
+              } catch (e) {
+                console.warn('Could not read companion .lrc:', item.name, e);
+              }
+            }
+          }
+
+          // Pass 2: Collect audio files
+          const audioExts = ['.flac', '.mp3', '.ogg', '.wav'];
+          for (const item of currentFiles) {
+            const ext = '.' + item.name.split('.').pop()?.toLowerCase();
+            if (audioExts.includes(ext)) {
+              try {
+                const f = await item.handle.getFile();
+                scannedAudio.push({
+                  file: f,
+                  fileHandle: item.handle,
+                  dirHandle: folderHandle,
+                  subDir: currentPath,
+                });
+              } catch (e) {
+                console.warn('Could not read audio file:', item.name, e);
+              }
+            }
+          }
+
+          // Crawl subfolders
+          for (const sub of subFolders) {
+            const nextPath = currentPath ? `${currentPath}/${sub.name}` : sub.name;
+            await crawlFolder(sub.handle, nextPath, depth + 1);
+          }
+        }
+
+        await crawlFolder(rootDirHandle);
+
+        if (scannedAudio.length === 0) {
+          this.showToast(`No supported audio files found in ${rootDirHandle.name}`);
+          return true;
+        }
+
+        const newTracks: AudioTrack[] = [];
+
+        for (const item of scannedAudio) {
+          const { file, fileHandle, dirHandle: parentDirHandle, subDir } = item;
+          const ext = '.' + file.name.split('.').pop()?.toLowerCase();
+          const baseName = file.name.replace(/\.[^.]+$/, '').toLowerCase();
+          const keyWithPath = subDir ? `${subDir}/${baseName}` : baseName;
+
+          const companionLrcText = lrcMap.get(keyWithPath) || lrcMap.get(baseName) || null;
+
+          let title = file.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ');
+          let artist = 'Unknown Artist';
+          let album = subDir ? subDir.split('/').pop() || 'Unknown Album' : rootDirHandle.name;
+          let duration = 0;
+          let rawLyrics = '';
+          let hasEmbedded = false;
+
+          if (ext === '.flac') {
+            try {
+              const flacMeta = await parseFlacFileInBrowser(file);
+              if (flacMeta.duration > 0) duration = flacMeta.duration;
+              if (flacMeta.tags['TITLE']) title = flacMeta.tags['TITLE'];
+              if (flacMeta.tags['ARTIST']) artist = flacMeta.tags['ARTIST'];
+              if (flacMeta.tags['ALBUM']) album = flacMeta.tags['ALBUM'];
+              if (flacMeta.rawLyrics) {
+                rawLyrics = flacMeta.rawLyrics;
+                hasEmbedded = true;
+              }
+            } catch (e) {
+              console.warn('FLAC parse error:', e);
+            }
+          }
+
+          if (companionLrcText) {
+            rawLyrics = companionLrcText;
+          }
+
+          const blobUrl = URL.createObjectURL(file);
+          const lines = parseRawLyricsToLines(rawLyrics);
+
+          const track: AudioTrack = {
+            id: generateTrackId(),
+            fileName: file.name,
+            fileSize: file.size,
+            fileType: file.type || `audio/${ext.replace('.', '')}`,
+            fileBlobUrl: blobUrl,
+            fileRef: file,
+            fileHandle,
+            dirHandle: parentDirHandle,
+            metadata: {
+              title,
+              artist,
+              album,
+              lengthSeconds: duration,
+              offsetMs: 0,
+            },
+            status: 'unsynced',
+            lyrics: lines,
+            originalRawLyrics: rawLyrics,
+            hasEmbeddedLyrics: hasEmbedded,
+            hasCompanionLrc: !!companionLrcText,
+            companionLrcPath: companionLrcText
+              ? `${subDir ? subDir + '/' : ''}${file.name.replace(/\.[^.]+$/, '.lrc')}`
+              : null,
+          };
+
+          this._updateTrackSyncStatus(track);
+          if (lines.length === 0) {
+            track.status = 'missing';
+          }
+
+          newTracks.push(track);
+        }
+
+        this.tracks = newTracks;
+        this.activeMusicDir = rootDirHandle.name;
+        this.dirExists = true;
+        this.librarySummary = {
+          total: newTracks.length,
+          synced: newTracks.filter(t => t.status === 'synced').length,
+          unsynced: newTracks.filter(t => t.status === 'unsynced').length,
+          missing: newTracks.filter(t => t.status === 'missing').length,
+        };
+
+        const firstUnsynced = this.tracks.find(t => t.status === 'unsynced');
+        this.selectTrack(firstUnsynced ? firstUnsynced.id : this.tracks[0].id);
+
+        this.showToast(`Opened folder "${rootDirHandle.name}": ${newTracks.length} tracks loaded!`);
+        return true;
+      } catch (err: any) {
+        if (err.name === 'AbortError') {
+          return false;
+        }
+        console.error('showDirectoryPicker error:', err);
+        this.showToast(`Failed to open folder: ${err.message}`);
+        return false;
+      } finally {
+        this.isScanning = false;
+      }
+    },
+
+    // ── 10. Folder Input Fallback (for Safari/Firefox or drag folder) ──
+    async importFromFolderInput(fileList: FileList | File[]): Promise<void> {
+      const files = Array.from(fileList);
+      if (files.length === 0) return;
+
+      this.isScanning = true;
+      try {
+        const lrcMap = new Map<string, string>();
+        const audioFiles: File[] = [];
+        const audioExts = ['.flac', '.mp3', '.ogg', '.wav'];
+
+        for (const f of files) {
+          const name = f.name.toLowerCase();
+          if (name.endsWith('.lrc')) {
+            try {
+              const text = await f.text();
+              const baseName = name.replace(/\.[^.]+$/, '');
+              lrcMap.set(baseName, text);
+              if ((f as any).webkitRelativePath) {
+                const relPath = (f as any).webkitRelativePath.replace(/\.[^.]+$/, '').toLowerCase();
+                lrcMap.set(relPath, text);
+              }
+            } catch (e) {
+              console.warn('Error reading .lrc:', f.name, e);
+            }
+          } else {
+            const ext = '.' + name.split('.').pop();
+            if (audioExts.includes(ext)) {
+              audioFiles.push(f);
+            }
+          }
+        }
+
+        if (audioFiles.length === 0) {
+          this.showToast('No supported audio files found in selected folder');
+          return;
+        }
+
+        const newTracks: AudioTrack[] = [];
+        let rootFolderName = '';
+
+        for (const file of audioFiles) {
+          const ext = '.' + file.name.split('.').pop()?.toLowerCase();
+          const baseName = file.name.replace(/\.[^.]+$/, '').toLowerCase();
+          const relPath = (file as any).webkitRelativePath ? (file as any).webkitRelativePath.toLowerCase() : '';
+          if (relPath && !rootFolderName) {
+            rootFolderName = relPath.split('/')[0] || '';
+          }
+
+          const companionLrcText =
+            lrcMap.get(relPath.replace(/\.[^.]+$/, '')) || lrcMap.get(baseName) || null;
+
+          let title = file.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ');
+          let artist = 'Unknown Artist';
+          let album = rootFolderName || 'Local Library';
+          let duration = 0;
+          let rawLyrics = '';
+          let hasEmbedded = false;
+
+          if (ext === '.flac') {
+            try {
+              const flacMeta = await parseFlacFileInBrowser(file);
+              if (flacMeta.duration > 0) duration = flacMeta.duration;
+              if (flacMeta.tags['TITLE']) title = flacMeta.tags['TITLE'];
+              if (flacMeta.tags['ARTIST']) artist = flacMeta.tags['ARTIST'];
+              if (flacMeta.tags['ALBUM']) album = flacMeta.tags['ALBUM'];
+              if (flacMeta.rawLyrics) {
+                rawLyrics = flacMeta.rawLyrics;
+                hasEmbedded = true;
+              }
+            } catch (e) {
+              console.warn('FLAC parse error:', e);
+            }
+          }
+
+          if (companionLrcText) {
+            rawLyrics = companionLrcText;
+          }
+
+          const blobUrl = URL.createObjectURL(file);
+          const lines = parseRawLyricsToLines(rawLyrics);
+
+          const track: AudioTrack = {
+            id: generateTrackId(),
+            fileName: file.name,
+            fileSize: file.size,
+            fileType: file.type || `audio/${ext.replace('.', '')}`,
+            fileBlobUrl: blobUrl,
+            fileRef: file,
+            metadata: {
+              title,
+              artist,
+              album,
+              lengthSeconds: duration,
+              offsetMs: 0,
+            },
+            status: 'unsynced',
+            lyrics: lines,
+            originalRawLyrics: rawLyrics,
+            hasEmbeddedLyrics: hasEmbedded,
+            hasCompanionLrc: !!companionLrcText,
+            companionLrcPath: companionLrcText ? file.name.replace(/\.[^.]+$/, '.lrc') : null,
+          };
+
+          this._updateTrackSyncStatus(track);
+          if (lines.length === 0) {
+            track.status = 'missing';
+          }
+
+          newTracks.push(track);
+        }
+
+        this.tracks = newTracks;
+        this.activeMusicDir = rootFolderName || 'Imported Folder';
+        this.dirExists = true;
+        this.librarySummary = {
+          total: newTracks.length,
+          synced: newTracks.filter(t => t.status === 'synced').length,
+          unsynced: newTracks.filter(t => t.status === 'unsynced').length,
+          missing: newTracks.filter(t => t.status === 'missing').length,
+        };
+
+        const firstUnsynced = this.tracks.find(t => t.status === 'unsynced');
+        this.selectTrack(firstUnsynced ? firstUnsynced.id : this.tracks[0].id);
+
+        this.showToast(`Imported ${newTracks.length} tracks from ${this.activeMusicDir}!`);
+      } catch (err: any) {
+        console.error('Folder input error:', err);
+        this.showToast(`Failed to read folder: ${err.message}`);
+      } finally {
+        this.isScanning = false;
+      }
+    },
+
+    // ── 11. File Import & Drag-Drop ──
     async handleFileImport(files: FileList | File[]): Promise<void> {
-      const supportedTypes = [
-        'audio/flac',
-        'audio/mpeg',
-        'audio/mp3',
-        'audio/ogg',
-        'audio/wav',
-        'audio/wave',
-        'audio/x-wav',
-        'audio/x-flac',
-      ];
-      const supportedExtensions = ['.flac', '.mp3', '.ogg', '.wav'];
+      const fileArr = Array.from(files);
+      const lrcMap = new Map<string, string>();
+      const audioExts = ['.flac', '.mp3', '.ogg', '.wav'];
 
-      for (const file of Array.from(files)) {
+      // First pass: extract any dropped .lrc files
+      for (const file of fileArr) {
+        if (file.name.toLowerCase().endsWith('.lrc')) {
+          try {
+            const text = await file.text();
+            lrcMap.set(file.name.replace(/\.[^.]+$/, '').toLowerCase(), text);
+          } catch {}
+        }
+      }
+
+      for (const file of fileArr) {
         const ext = '.' + file.name.split('.').pop()?.toLowerCase();
-        const isSupported =
-          supportedTypes.includes(file.type) || supportedExtensions.includes(ext);
-
-        if (!isSupported) continue;
+        if (!audioExts.includes(ext)) continue;
 
         const blobUrl = URL.createObjectURL(file);
+        const baseName = file.name.replace(/\.[^.]+$/, '').toLowerCase();
+        const companionLrc = lrcMap.get(baseName) || null;
 
-        // Determine file format label
-        let fileType = ext.replace('.', '').toUpperCase();
-        if (fileType === 'MP3') fileType = 'MP3';
-        else if (fileType === 'FLAC') fileType = 'FLAC';
-        else if (fileType === 'OGG') fileType = 'OGG';
-        else if (fileType === 'WAV') fileType = 'WAV';
+        let title = file.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ');
+        let artist = 'Unknown Artist';
+        let album = 'Imported';
+        let duration = 0;
+        let rawLyrics = '';
+        let hasEmbedded = false;
 
-        // Get duration from audio element
-        const audioDuration = await this._getAudioDuration(blobUrl);
+        if (ext === '.flac') {
+          try {
+            const flacMeta = await parseFlacFileInBrowser(file);
+            if (flacMeta.duration > 0) duration = flacMeta.duration;
+            if (flacMeta.tags['TITLE']) title = flacMeta.tags['TITLE'];
+            if (flacMeta.tags['ARTIST']) artist = flacMeta.tags['ARTIST'];
+            if (flacMeta.tags['ALBUM']) album = flacMeta.tags['ALBUM'];
+            if (flacMeta.rawLyrics) {
+              rawLyrics = flacMeta.rawLyrics;
+              hasEmbedded = true;
+            }
+          } catch (e) {
+            console.warn('FLAC error:', e);
+          }
+        }
+
+        if (companionLrc) {
+          rawLyrics = companionLrc;
+        }
+
+        if (duration === 0) {
+          duration = await this._getAudioDuration(blobUrl);
+        }
+
+        const lines = parseRawLyricsToLines(rawLyrics);
 
         const track: AudioTrack = {
           id: generateTrackId(),
@@ -683,21 +1076,27 @@ export const useLyricsStudioStore = defineStore('lyricsStudio', {
           fileBlobUrl: blobUrl,
           fileRef: file,
           metadata: {
-            title: file.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' '),
-            artist: 'Unknown Artist',
-            album: 'Unknown Album',
-            lengthSeconds: audioDuration,
+            title,
+            artist,
+            album,
+            lengthSeconds: duration,
             offsetMs: 0,
           },
           status: 'unsynced',
-          lyrics: [],
-          originalRawLyrics: '',
-          hasEmbeddedLyrics: false,
+          lyrics: lines,
+          originalRawLyrics: rawLyrics,
+          hasEmbeddedLyrics: hasEmbedded,
+          hasCompanionLrc: !!companionLrc,
+          companionLrcPath: companionLrc ? file.name.replace(/\.[^.]+$/, '.lrc') : null,
         };
+
+        this._updateTrackSyncStatus(track);
+        if (lines.length === 0) {
+          track.status = 'missing';
+        }
 
         this.tracks.push(track);
 
-        // Auto-select if this is the first/only track
         if (this.tracks.length === 1 || !this.activeTrackId) {
           this.activeTrackId = track.id;
         }
@@ -736,8 +1135,8 @@ export const useLyricsStudioStore = defineStore('lyricsStudio', {
       this.playback.activeLineIndex = 0;
       this.undoStack = [];
 
-      // Auto-save to .lrc on disk if it's a local track
-      if (autoSaveToDisk && track.filePath) {
+      // Auto-save to .lrc on disk if it's a local track (Node dev server or File System Access API)
+      if (autoSaveToDisk && (track.filePath || track.dirHandle)) {
         await this.saveLrcToDisk(false);
         const lrcName = track.fileName.replace(/\.[^.]+$/, '.lrc');
         this.showToast(`Saved ${track.lyrics.length} lines to ${lrcName}`);
@@ -767,7 +1166,7 @@ export const useLyricsStudioStore = defineStore('lyricsStudio', {
       track.status = 'unsynced';
 
       // Save cleared timestamps to disk so the file stays in sync
-      if (track.filePath) {
+      if (track.filePath || track.dirHandle) {
         await this.saveLrcToDisk(false);
         this.showToast('All timestamps cleared and updated on disk.');
       } else {

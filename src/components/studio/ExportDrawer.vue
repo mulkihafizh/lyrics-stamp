@@ -107,7 +107,7 @@ async function batchExportZip() {
     <div class="flex flex-wrap gap-2">
       <!-- Direct Local Disk Save Button -->
       <MonasticButton
-        v-if="store.activeTrack?.filePath"
+        v-if="store.activeTrack?.filePath || store.activeTrack?.dirHandle"
         variant="primary"
         size="sm"
         @click="store.saveLrcToDisk()"

@@ -19,11 +19,11 @@ So I put **LYRICS-STAMP** together. It’s a clean, local-first audio atelier ma
 
 ## ✨ Features
 
-- 📁 **Configurable Local Music Library**:
-  - Automatically scans local folders recursively for `.flac`, `.mp3`, `.ogg`, `.wav`, and `.m4a` files.
-  - Native FLAC Vorbis comment extraction (`TITLE`, `ARTIST`, `ALBUM`, `LYRICS`, `UNSYNCEDLYRICS`).
-  - Companion `.lrc` detection and status census (`SYNC`, `STAMP`, `EMPTY`).
-  - Configure via `.env.local` (`MUSIC_DIR`), via the in-app Directory Settings modal, or by drag-and-dropping files.
+- 📁 **Universal Local Library & Native Folder Picker**:
+  - **Native Browser Folder Picker**: Click **"Open Folder"** to choose any music directory directly from your device via the Web File System Access API. Runs 100% client-side with zero cloud uploads—works seamlessly on local dev and static hosting platforms like **Vercel** with direct local disk reading and 1-click `.lrc` saving!
+  - **Server-Side Scanning (Node Dev Mode)**: Automatically scans local collections recursively for `.flac`, `.mp3`, `.ogg`, and `.wav` files via `.env.local` (`MUSIC_DIR`) or the in-app modal.
+  - **Client-Side FLAC & Vorbis Parser**: Decodes STREAMINFO audio durations and Vorbis tags (`TITLE`, `ARTIST`, `ALBUM`, `LYRICS`, `UNSYNCEDLYRICS`) directly in browser memory without external binaries.
+  - **Companion `.lrc` Detection**: Detects companion `.lrc` files next to audio files and updates census status (`SYNC`, `STAMP`, `EMPTY`).
 - 🎛️ **Dual Stamping Modes**:
   - **Line Mode**: Instant line-by-line timestamping (`[mm:ss.xx]`) with one-key advance and instrumental solo clearance (`[mm:ss.xx]`).
   - **Word Mode (Enhanced LRC / eLRC)**: Karaoke-style per-word synchronization (`<mm:ss.xx> word <mm:ss.xx>`) with dedicated word start (<kbd>Space</kbd>) and word end (<kbd>Ctrl+Space</kbd> / <kbd>Alt+Space</kbd>) shortcuts.

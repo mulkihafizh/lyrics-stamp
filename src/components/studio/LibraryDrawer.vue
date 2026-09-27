@@ -19,8 +19,30 @@ const store = useLyricsStudioStore();
 
 const isDragOver = ref(false);
 const fileInput = ref<HTMLInputElement | null>(null);
+const folderInput = ref<HTMLInputElement | null>(null);
 const isDirModalOpen = ref(false);
 const customDirInput = ref('');
+
+async function handleOpenFolder() {
+  if (typeof window !== 'undefined' && 'showDirectoryPicker' in window) {
+    const success = await store.openNativeFolderPicker();
+    if (success) {
+      isDirModalOpen.value = false;
+    }
+  } else {
+    // Fallback for browsers without File System Access API
+    folderInput.value?.click();
+  }
+}
+
+async function onFolderInputChanged(e: Event) {
+  const input = e.target as HTMLInputElement;
+  if (input.files && input.files.length > 0) {
+    await store.importFromFolderInput(input.files);
+    isDirModalOpen.value = false;
+  }
+  input.value = '';
+}
 
 function openDirModal() {
   customDirInput.value = store.activeMusicDir || 'D:\\Music';
@@ -97,19 +119,30 @@ function getFormatTag(track: { fileType: string; fileName: string }): string {
           <Icon icon="lucide:library" class="w-3.5 h-3.5 text-zinc-500" />
           <span class="font-mono text-[10px] tracking-monastic text-zinc-500 uppercase">LIBRARY CENSUS</span>
         </div>
-        <button
-          class="flex items-center gap-1.5 font-mono text-[9px] tracking-monastic text-zinc-400 hover:text-white px-2 py-0.5 border border-hairline hover:border-hairline-light transition-surface cursor-pointer bg-canvas/60"
-          :disabled="store.isScanning"
-          :title="`Re-scan ${store.activeMusicDir || 'library'}`"
-          @click="store.fetchLocalLibrary(true)"
-        >
-          <Icon
-            icon="lucide:refresh-cw"
-            class="w-2.5 h-2.5"
-            :class="store.isScanning ? 'animate-spin text-accent-indigo' : 'text-zinc-500'"
-          />
-          <span>{{ store.isScanning ? 'SCANNING...' : `SCAN ${displayDirName.toUpperCase()}` }}</span>
-        </button>
+        <div class="flex items-center gap-1.5">
+          <button
+            class="flex items-center gap-1 font-mono text-[9px] tracking-monastic text-accent-gold hover:text-white px-2 py-0.5 border border-accent-gold/40 hover:border-accent-gold transition-surface cursor-pointer bg-accent-gold/10"
+            :disabled="store.isScanning"
+            title="Open music folder from your device (works 100% offline & on Vercel)"
+            @click="handleOpenFolder"
+          >
+            <Icon icon="lucide:folder-open" class="w-2.5 h-2.5 text-accent-gold" />
+            <span>OPEN FOLDER</span>
+          </button>
+          <button
+            class="flex items-center gap-1.5 font-mono text-[9px] tracking-monastic text-zinc-400 hover:text-white px-2 py-0.5 border border-hairline hover:border-hairline-light transition-surface cursor-pointer bg-canvas/60"
+            :disabled="store.isScanning"
+            :title="`Re-scan ${displayDirName}`"
+            @click="store.fetchLocalLibrary(true)"
+          >
+            <Icon
+              icon="lucide:refresh-cw"
+              class="w-2.5 h-2.5"
+              :class="store.isScanning ? 'animate-spin text-accent-indigo' : 'text-zinc-500'"
+            />
+            <span>{{ store.isScanning ? 'SCANNING...' : `SCAN` }}</span>
+          </button>
+        </div>
       </div>
 
       <!-- Active Directory Bar -->
@@ -117,20 +150,29 @@ function getFormatTag(track: { fileType: string; fileName: string }): string {
         <div class="flex items-center gap-1.5 min-w-0 flex-1">
           <span
             class="w-1.5 h-1.5 rounded-full shrink-0"
-            :class="store.dirExists ? 'bg-accent-emerald' : 'bg-accent-terracotta animate-pulse'"
+            :class="store.dirExists && store.tracks.length > 0 ? 'bg-accent-emerald' : 'bg-accent-terracotta animate-pulse'"
             :title="store.dirExists ? 'Directory connected' : 'Directory not found'"
           />
-          <span class="font-mono text-[9px] text-zinc-400 truncate" :title="store.activeMusicDir || 'D:\\Music'">
-            {{ store.activeMusicDir || 'D:\\Music' }}
+          <span class="font-mono text-[9px] text-zinc-400 truncate" :title="store.activeMusicDir || 'No folder opened'">
+            {{ store.activeMusicDir || 'No folder opened' }}
           </span>
         </div>
-        <button
-          class="text-zinc-500 hover:text-accent-gold transition-colors p-0.5 cursor-pointer shrink-0"
-          title="Change Music Directory"
-          @click="openDirModal"
-        >
-          <Icon icon="lucide:folder-cog" class="w-3.5 h-3.5" />
-        </button>
+        <div class="flex items-center gap-1 shrink-0">
+          <button
+            class="text-zinc-500 hover:text-accent-gold transition-colors p-0.5 cursor-pointer"
+            title="Open Folder from Device (Native Web API)"
+            @click="handleOpenFolder"
+          >
+            <Icon icon="lucide:folder-open" class="w-3.5 h-3.5" />
+          </button>
+          <button
+            class="text-zinc-500 hover:text-accent-gold transition-colors p-0.5 cursor-pointer"
+            title="Configure Music Directory Path"
+            @click="openDirModal"
+          >
+            <Icon icon="lucide:folder-cog" class="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
       <!-- Search -->
@@ -286,28 +328,50 @@ function getFormatTag(track: { fileType: string; fileName: string }): string {
       <!-- Empty State -->
       <div
         v-if="store.filteredTracks.length === 0"
-        class="px-4 py-10 text-center"
+        class="px-4 py-8 text-center"
       >
-        <div v-if="!store.dirExists" class="mb-4">
-          <Icon icon="lucide:folder-x" class="w-8 h-8 text-accent-terracotta mx-auto mb-2 opacity-80" />
-          <p class="font-mono text-[10px] text-accent-terracotta tracking-monastic uppercase">DIRECTORY NOT FOUND</p>
-          <p class="font-mono text-[10px] text-zinc-500 mt-1 break-all">{{ store.activeMusicDir }}</p>
-          <button
-            class="mt-3 font-mono text-[9px] uppercase tracking-monastic px-3 py-1.5 bg-accent-gold/15 border border-accent-gold/40 text-accent-gold hover:bg-accent-gold/25 cursor-pointer inline-flex items-center gap-1.5 transition-colors"
-            @click="openDirModal"
-          >
-            <Icon icon="lucide:folder-cog" class="w-3.5 h-3.5" />
-            <span>Configure Music Folder</span>
-          </button>
+        <div v-if="store.tracks.length === 0" class="mb-4">
+          <Icon icon="lucide:folder-search" class="w-8 h-8 text-accent-gold mx-auto mb-2 opacity-80" />
+          <p class="font-mono text-[10px] text-accent-gold tracking-monastic uppercase">NO MUSIC FOLDER LOADED</p>
+          <p class="font-sans text-[11px] text-zinc-500 mt-1 max-w-[240px] mx-auto leading-relaxed">
+            Pick any folder on your device containing FLAC, MP3, OGG, or WAV audio and .LRC companion files.
+          </p>
+          <div class="mt-4 flex flex-col gap-2 max-w-[220px] mx-auto">
+            <button
+              class="font-mono text-[10px] uppercase tracking-monastic px-3 py-2 bg-accent-gold/20 border border-accent-gold/50 text-accent-gold hover:bg-accent-gold/30 cursor-pointer flex items-center justify-center gap-2 transition-colors font-semibold"
+              :disabled="store.isScanning"
+              @click="handleOpenFolder"
+            >
+              <Icon icon="lucide:folder-open" class="w-3.5 h-3.5" />
+              <span>Open Music Folder</span>
+            </button>
+            <button
+              class="font-mono text-[9px] uppercase tracking-monastic px-2 py-1 bg-canvas border border-hairline hover:border-zinc-500 text-zinc-400 hover:text-white cursor-pointer transition-colors"
+              @click="openDirModal"
+            >
+              Configure Path (Dev Mode)
+            </button>
+          </div>
         </div>
         <div v-else>
           <Icon icon="lucide:music" class="w-6 h-6 text-zinc-700 mx-auto mb-2" />
-          <p class="font-mono text-[10px] text-zinc-500 tracking-monastic">NO TRACKS FOUND</p>
+          <p class="font-mono text-[10px] text-zinc-500 tracking-monastic">NO TRACKS MATCH FILTER</p>
           <p class="font-sans text-[11px] text-zinc-600 mt-1">Try clearing your search query or switching filters.</p>
         </div>
       </div>
     </div>
   </div>
+
+  <!-- Hidden Folder Input Fallback (for Safari/Firefox) -->
+  <input
+    ref="folderInput"
+    type="file"
+    webkitdirectory
+    directory
+    multiple
+    class="hidden"
+    @change="onFolderInputChanged"
+  />
 
   <!-- Directory Settings Modal -->
   <Teleport to="body">
@@ -330,6 +394,36 @@ function getFormatTag(track: { fileType: string; fileName: string }): string {
           >
             <Icon icon="lucide:x" class="w-4 h-4" />
           </button>
+        </div>
+
+        <!-- Native Folder Picker Action Card -->
+        <div class="mb-4 p-3 bg-canvas border border-accent-gold/30">
+          <div class="flex items-center gap-2 mb-1.5">
+            <Icon icon="lucide:hard-drive" class="w-4 h-4 text-accent-gold" />
+            <span class="font-mono text-[10px] font-bold text-accent-gold uppercase tracking-monastic">
+              BROWSE DEVICE FOLDER (NATIVE WEB API)
+            </span>
+          </div>
+          <p class="font-sans text-[11px] text-zinc-400 leading-relaxed mb-3">
+            Select any local music folder directly from your computer. Works 100% in your browser on both local dev and web (Vercel) with direct disk saving and no cloud upload.
+          </p>
+          <button
+            class="w-full font-mono text-[10px] tracking-monastic uppercase px-4 py-2 bg-accent-gold/20 border border-accent-gold/50 text-accent-gold hover:bg-accent-gold/30 cursor-pointer flex items-center justify-center gap-2 transition-colors"
+            :disabled="store.isScanning"
+            @click="handleOpenFolder"
+          >
+            <Icon v-if="store.isScanning" icon="lucide:refresh-cw" class="w-3.5 h-3.5 animate-spin" />
+            <Icon v-else icon="lucide:folder-open" class="w-3.5 h-3.5" />
+            <span>{{ store.isScanning ? 'SCANNING FOLDER...' : 'PICK FOLDER FROM DEVICE...' }}</span>
+          </button>
+        </div>
+
+        <div class="relative flex py-2 items-center mb-3">
+          <div class="flex-grow border-t border-hairline"></div>
+          <span class="flex-shrink mx-2 font-mono text-[8px] text-zinc-600 uppercase tracking-widest">
+            OR CONFIGURE SERVER PATH (NODE DEV)
+          </span>
+          <div class="flex-grow border-t border-hairline"></div>
         </div>
 
         <p class="font-sans text-xs text-zinc-400 leading-relaxed mb-3">

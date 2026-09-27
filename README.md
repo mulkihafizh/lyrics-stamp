@@ -9,7 +9,7 @@
 
 Whenever I buy music on Bandcamp or rip CDs to FLAC, I almost always hit the same wall: the lyrics are either completely missing, or they're just dumped in as raw, static blocks of text.
 
-I love watching lyrics scroll in sync while listening on foobar2000, but trying to time `.lrc` files by hand—or wrestling with clunky abandonware from fifteen years ago—takes all the fun out of it.
+I love watching lyrics scroll in sync while listening on foobar2000, but trying to time `.lrc` files by hand or wrestling with clunky abandonware from fifteen years ago takes all the fun out of it.
 
 I wanted something tactile, responsive, and satisfying: drop in a track, press play, and tap along to the music.
 

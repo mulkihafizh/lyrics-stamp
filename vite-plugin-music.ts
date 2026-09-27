@@ -178,7 +178,7 @@ function parseFlacComments(filePath: string): Record<string, string> {
  */
 function hasSyncTimestamps(text: string): boolean {
   if (!text) return false;
-  return /\[\d{1,2}:\d{2}(?:\.\d{1,3})?\]|<\d{1,2}:\d{2}(?:\.\d{1,3})?>/.test(text);
+  return /\[\d{1,3}:\d{2}(?:\.\d{1,3})?\]|<\d{1,3}:\d{2}(?:\.\d{1,3})?>/.test(text);
 }
 
 /**
@@ -244,7 +244,7 @@ export function scanMusicFolder(baseDir = activeMusicDirectory): ScannedTrack[] 
               .map(line => line.trim())
               .filter(line => {
                 if (!line) return false;
-                if (/^\[(ti|ar|al|by|re|ve|offset|length):.*\]$/i.test(line)) return false;
+                if (/^\[[a-zA-Z]{1,15}:.*\]$/i.test(line)) return false;
                 return true;
               });
           };
@@ -264,9 +264,6 @@ export function scanMusicFolder(baseDir = activeMusicDirectory): ScannedTrack[] 
           } else if (embeddedLines.length > 0) {
             source = 'embedded';
             rawLyrics = embeddedLyrics || '';
-          } else if (companionLrc) {
-            source = 'companion_lrc';
-            rawLyrics = companionLrc;
           }
 
           const activeLines = companionLines.length > 0 ? companionLines : embeddedLines;
@@ -274,7 +271,7 @@ export function scanMusicFolder(baseDir = activeMusicDirectory): ScannedTrack[] 
           let status: ScannedTrack['status'] = 'missing';
           if (activeLines.length > 0) {
             const timestampedCount = activeLines.filter(l => hasSyncTimestamps(l)).length;
-            if (timestampedCount > 0 && timestampedCount >= activeLines.length * 0.4) {
+            if (timestampedCount > 0) {
               status = 'synced';
             } else {
               status = 'unsynced';

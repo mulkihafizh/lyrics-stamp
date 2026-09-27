@@ -470,12 +470,13 @@ export const useLyricsStudioStore = defineStore('lyricsStudio', {
 
     // ── 7. Track Status Update ──
     _updateTrackSyncStatus(track: AudioTrack): void {
-      const totalLines = track.lyrics.filter(l => l.rawText.trim() !== '' || l.isInstrumentalGap).length;
+      const meaningfulLines = track.lyrics.filter(l => l.rawText.trim() !== '' || l.isInstrumentalGap);
+      const totalLines = meaningfulLines.length;
       const stampedLines = track.lyrics.filter(l => l.timestamp !== null).length;
 
-      if (stampedLines === 0) {
-        track.status = 'unsynced';
-      } else if (stampedLines >= totalLines && totalLines > 0) {
+      if (totalLines === 0) {
+        track.status = 'missing';
+      } else if (stampedLines > 0) {
         track.status = 'synced';
       } else {
         track.status = 'unsynced';
@@ -498,7 +499,7 @@ export const useLyricsStudioStore = defineStore('lyricsStudio', {
         // Map scanned tracks
         this.tracks = data.tracks.map((t: any) => {
           const lines = parseRawLyricsToLines(t.rawLyrics || '');
-          return {
+          const track: AudioTrack = {
             id: t.id,
             filePath: t.filePath,
             fileName: t.fileName,
@@ -520,7 +521,16 @@ export const useLyricsStudioStore = defineStore('lyricsStudio', {
             hasCompanionLrc: t.hasCompanionLrc,
             companionLrcPath: t.companionLrcPath,
           };
+          this._updateTrackSyncStatus(track);
+          return track;
         });
+
+        this.librarySummary = {
+          total: this.tracks.length,
+          synced: this.tracks.filter(t => t.status === 'synced').length,
+          unsynced: this.tracks.filter(t => t.status === 'unsynced').length,
+          missing: this.tracks.filter(t => t.status === 'missing').length,
+        };
 
         // Select first track (prefer unsynced track that needs stamping)
         if (this.tracks.length > 0 && !this.activeTrackId) {
@@ -530,7 +540,7 @@ export const useLyricsStudioStore = defineStore('lyricsStudio', {
 
         if (this.dirExists) {
           this.showToast(
-            `Scanned ${this.activeMusicDir}: ${data.summary.total} tracks (${data.summary.synced} synced, ${data.summary.unsynced} unsynced)`
+            `Scanned ${this.activeMusicDir}: ${this.librarySummary.total} tracks (${this.librarySummary.synced} synced, ${this.librarySummary.unsynced} unsynced)`
           );
         } else {
           this.showToast(`Music directory not found: ${this.activeMusicDir}`);
@@ -558,11 +568,10 @@ export const useLyricsStudioStore = defineStore('lyricsStudio', {
 
         this.activeMusicDir = data.currentDir;
         this.dirExists = true;
-        this.librarySummary = data.summary;
 
         this.tracks = data.tracks.map((t: any) => {
           const lines = parseRawLyricsToLines(t.rawLyrics || '');
-          return {
+          const track: AudioTrack = {
             id: t.id,
             filePath: t.filePath,
             fileName: t.fileName,
@@ -584,7 +593,16 @@ export const useLyricsStudioStore = defineStore('lyricsStudio', {
             hasCompanionLrc: t.hasCompanionLrc,
             companionLrcPath: t.companionLrcPath,
           };
+          this._updateTrackSyncStatus(track);
+          return track;
         });
+
+        this.librarySummary = {
+          total: this.tracks.length,
+          synced: this.tracks.filter(t => t.status === 'synced').length,
+          unsynced: this.tracks.filter(t => t.status === 'unsynced').length,
+          missing: this.tracks.filter(t => t.status === 'missing').length,
+        };
 
         if (this.tracks.length > 0) {
           const firstUnsynced = this.tracks.find(t => t.status === 'unsynced');

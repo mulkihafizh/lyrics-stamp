@@ -57,8 +57,8 @@ export function parseRawLyricsToLines(rawText: string): LyricLine[] {
   for (let i = 0; i < rawLines.length; i++) {
     const raw = rawLines[i];
 
-    // Skip LRC metadata tags like [ar:...], [ti:...], [al:...], [by:...], [re:...], [ve:...], [offset:...]
-    if (/^\[(ar|al|ti|by|re|ve|offset|length):.*\]$/i.test(raw.trim())) {
+    // Skip LRC metadata tags like [ar:...], [ti:...], [al:...], [by:...], [re:...], [ve:...], [offset:...], [id:...], [au:...], [length:...], etc.
+    if (/^\[[a-zA-Z]{1,15}:.*\]$/i.test(raw.trim())) {
       continue;
     }
 
@@ -133,6 +133,36 @@ export function parseRawLyricsToLines(rawText: string): LyricLine[] {
       activeWordIndex: 0,
     });
   }
+
+  // If text only contained metadata or empty lines, treat as no lyrics
+  const hasRealContent = lines.some(
+    l => l.rawText.trim() !== '' || l.timestamp !== null || l.isInstrumentalGap
+  );
+  if (!hasRealContent) {
+    return [];
+  }
+
+  // Trim leading and trailing empty lines without timestamps
+  while (
+    lines.length > 0 &&
+    lines[0].rawText.trim() === '' &&
+    lines[0].timestamp === null &&
+    !lines[0].isInstrumentalGap
+  ) {
+    lines.shift();
+  }
+  while (
+    lines.length > 0 &&
+    lines[lines.length - 1].rawText.trim() === '' &&
+    lines[lines.length - 1].timestamp === null &&
+    !lines[lines.length - 1].isInstrumentalGap
+  ) {
+    lines.pop();
+  }
+
+  lines.forEach((l, idx) => {
+    l.lineIndex = idx;
+  });
 
   return lines;
 }

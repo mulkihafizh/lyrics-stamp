@@ -52,7 +52,7 @@ So I put **LYRICS-STAMP** together. It’s a clean, local-first audio atelier ma
 ### 2. Installation
 ```bash
 # Clone repository
-git clone https://github.com/your-username/lyrics-stamp.git
+git clone https://github.com/mulkihafizh/lyrics-stamp.git
 cd lyrics-stamp
 
 # Install dependencies
